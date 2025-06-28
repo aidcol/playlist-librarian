@@ -10,5 +10,5 @@ wheels/
 .venv
 
 # Project-specific
-.env
+.*
 tests/
