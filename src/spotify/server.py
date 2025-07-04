@@ -27,10 +27,6 @@ class TrackDetailsRequest(BaseModel):
     track_ids: List[str] = Field(description="List of Spotify track IDs")
 
 
-class ArtistDetailsRequest(BaseModel):
-    artist_ids: List[str] = Field(description="List of Spotify artist IDs")
-
-
 class AlbumDetailsRequest(BaseModel):
     album_ids: List[str] = Field(description="List of Spotify album IDs")
 
@@ -100,6 +96,29 @@ def get_track_details(request: TrackDetailsRequest) -> dict:
         # Fetch track details from Spotify API
         tracks_data = spotify_client.tracks(request.track_ids)
         
+        # Extract unique artist IDs to fetch detailed artist information
+        artist_ids = set()
+        for track in tracks_data['tracks']:
+            if track is not None:
+                for artist in track['artists']:
+                    artist_ids.add(artist['id'])
+        
+        # Fetch detailed artist information
+        artists_data = {}
+        if artist_ids:
+            artists_response = spotify_client.artists(list(artist_ids))
+            for artist in artists_response['artists']:
+                if artist is not None:
+                    # Extract artist image URL (largest image)
+                    artist_image_url = None
+                    if artist['images']:
+                        artist_image_url = artist['images'][0]['url']
+                    
+                    artists_data[artist['id']] = {
+                        "image_url": artist_image_url,
+                        "genres": artist.get('genres', [])
+                    }
+        
         tracks = []
         for track in tracks_data['tracks']:
             if track is not None:
@@ -107,6 +126,18 @@ def get_track_details(request: TrackDetailsRequest) -> dict:
                 album_cover_url = None
                 if track['album']['images']:
                     album_cover_url = track['album']['images'][0]['url']
+                
+                # Build artist list with detailed information
+                artists = []
+                for artist in track['artists']:
+                    artist_details = {
+                        "uri": artist['uri'],
+                        "name": artist['name']
+                    }
+                    # Add detailed artist info if available
+                    if artist['id'] in artists_data:
+                        artist_details.update(artists_data[artist['id']])
+                    artists.append(artist_details)
                 
                 tracks.append({
                     "name": track['name'],
@@ -119,13 +150,7 @@ def get_track_details(request: TrackDetailsRequest) -> dict:
                         "release_date": track['album']['release_date'],
                         "release_date_precision": track['album']['release_date_precision']
                     },
-                    "artists": [
-                        {
-                            "uri": artist['uri'],
-                            "name": artist['name']
-                        }
-                        for artist in track['artists']
-                    ]
+                    "artists": artists
                 })
         
         return {"tracks": tracks}
@@ -137,51 +162,6 @@ def get_track_details(request: TrackDetailsRequest) -> dict:
         logger.error(f"Error fetching track details: {e}")
         raise ValueError(f"Failed to fetch track details: {str(e)}")
 
-
-@mcp.tool()
-def get_artist_details(request: ArtistDetailsRequest) -> dict:
-    """Get detailed artist information including genres and image URL"""
-    logger.info(f"Getting artist details for {len(request.artist_ids)} artists: {request.artist_ids}")
-    
-    if spotify_manager is None:
-        raise SpotifyClientError("Spotify client not initialized")
-    
-    # Validate input
-    if not request.artist_ids:
-        raise ValueError("artist_ids cannot be empty")
-    
-    for i, artist_id in enumerate(request.artist_ids):
-        if not artist_id.strip():
-            raise ValueError(f"artist_ids[{i}] cannot be empty")
-    
-    try:
-        # Get authenticated Spotify client
-        spotify_client = spotify_manager.get_client()
-        
-        # Fetch artist details from Spotify API
-        artists_data = spotify_client.artists(request.artist_ids)
-        
-        artists = []
-        for artist in artists_data['artists']:
-            if artist is not None:
-                # Extract artist image URL (largest image)
-                artist_image_url = None
-                if artist['images']:
-                    artist_image_url = artist['images'][0]['url']
-                
-                artists.append({
-                    "image_url": artist_image_url,
-                    "genres": artist.get('genres', [])
-                })
-        
-        return {"artists": artists}
-        
-    except SpotifyClientError as e:
-        logger.error(f"Spotify client error: {e}")
-        raise ValueError(str(e))
-    except Exception as e:
-        logger.error(f"Error fetching artist details: {e}")
-        raise ValueError(f"Failed to fetch artist details: {str(e)}")
 
 
 @mcp.tool()
