@@ -82,6 +82,9 @@ def get_track_details(request: TrackDetailsRequest) -> dict:
     """Get detailed metadata for specific tracks"""
     logger.info(f"Getting track details for {len(request.track_ids)} tracks: {request.track_ids}")
     
+    if spotify_manager is None:
+        raise SpotifyClientError("Spotify client not initialized")
+    
     # Validate input
     if not request.track_ids:
         raise ValueError("track_ids cannot be empty")
@@ -90,19 +93,49 @@ def get_track_details(request: TrackDetailsRequest) -> dict:
         if not track_id.strip():
             raise ValueError(f"track_ids[{i}] cannot be empty")
     
-    # Concise placeholder response
-    tracks = []
-    for track_id in request.track_ids:
-        tracks.append({
-            "id": track_id,
-            "name": f"Track Name for {track_id}",
-            "duration_ms": 210000,
-            "popularity": 85,
-            "artist_ids": ["artist1"],
-            "album_id": "album1"
-        })
-    
-    return {"tracks": tracks}
+    try:
+        # Get authenticated Spotify client
+        spotify_client = spotify_manager.get_client()
+        
+        # Fetch track details from Spotify API
+        tracks_data = spotify_client.tracks(request.track_ids)
+        
+        tracks = []
+        for track in tracks_data['tracks']:
+            if track is not None:
+                # Extract album cover art URL (largest image)
+                album_cover_url = None
+                if track['album']['images']:
+                    album_cover_url = track['album']['images'][0]['url']
+                
+                tracks.append({
+                    "name": track['name'],
+                    "duration_ms": track['duration_ms'],
+                    "album": {
+                        "uri": track['album']['uri'],
+                        "name": track['album']['name'],
+                        "album_type": track['album']['album_type'],
+                        "cover_art_url": album_cover_url,
+                        "release_date": track['album']['release_date'],
+                        "release_date_precision": track['album']['release_date_precision']
+                    },
+                    "artists": [
+                        {
+                            "uri": artist['uri'],
+                            "name": artist['name']
+                        }
+                        for artist in track['artists']
+                    ]
+                })
+        
+        return {"tracks": tracks}
+        
+    except SpotifyClientError as e:
+        logger.error(f"Spotify client error: {e}")
+        raise ValueError(str(e))
+    except Exception as e:
+        logger.error(f"Error fetching track details: {e}")
+        raise ValueError(f"Failed to fetch track details: {str(e)}")
 
 
 @mcp.tool()
