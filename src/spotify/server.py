@@ -37,8 +37,11 @@ class AlbumDetailsRequest(BaseModel):
 
 @mcp.tool()
 def fetch_playlist(request: PlaylistRequest) -> dict:
-    """Fetch complete playlist data from Spotify including track, artist, and album IDs"""
+    """Fetch track URIs from a Spotify playlist"""
     logger.info(f"Fetching playlist: {request.playlist_url_or_id}")
+    
+    if spotify_manager is None:
+        raise SpotifyClientError("Spotify client not initialized")
     
     try:
         # Extract playlist ID from URL or validate raw ID
@@ -49,14 +52,29 @@ def fetch_playlist(request: PlaylistRequest) -> dict:
         logger.error(f"Invalid playlist URL or ID: {e}")
         raise ValueError(str(e))
     
-    # Concise placeholder response with extracted ID
-    return {
-        "playlist_id": playlist_id,
-        "name": "Playlist Name",
-        "track_ids": ["track1", "track2", "track3"],
-        "artist_ids": ["artist1", "artist2", "artist3"],
-        "album_ids": ["album1", "album2", "album3"]
-    }
+    try:
+        # Get authenticated Spotify client
+        spotify_client = spotify_manager.get_client()
+        
+        # Fetch playlist tracks from Spotify API
+        playlist_tracks = spotify_client.playlist_tracks(playlist_id)
+        
+        # Extract track URIs
+        track_uris = []
+        for item in playlist_tracks['items']:
+            if item['track'] is not None and item['track']['uri']:
+                track_uris.append(item['track']['uri'])
+        
+        return {
+            "track_uris": track_uris
+        }
+        
+    except SpotifyClientError as e:
+        logger.error(f"Spotify client error: {e}")
+        raise ValueError(str(e))
+    except Exception as e:
+        logger.error(f"Error fetching playlist: {e}")
+        raise ValueError(f"Failed to fetch playlist: {str(e)}")
 
 
 @mcp.tool()
