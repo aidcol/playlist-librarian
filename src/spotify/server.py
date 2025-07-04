@@ -27,10 +27,6 @@ class TrackDetailsRequest(BaseModel):
     track_ids: List[str] = Field(description="List of Spotify track IDs")
 
 
-class AlbumDetailsRequest(BaseModel):
-    album_ids: List[str] = Field(description="List of Spotify album IDs")
-
-
 @mcp.tool()
 def fetch_playlist(request: PlaylistRequest) -> dict:
     """Fetch track URIs from a Spotify playlist"""
@@ -103,6 +99,12 @@ def get_track_details(request: TrackDetailsRequest) -> dict:
                 for artist in track['artists']:
                     artist_ids.add(artist['id'])
         
+        # Extract unique album IDs to fetch detailed album information
+        album_ids = set()
+        for track in tracks_data['tracks']:
+            if track is not None and track['album'] and track['album']['id']:
+                album_ids.add(track['album']['id'])
+        
         # Fetch detailed artist information
         artists_data = {}
         if artist_ids:
@@ -117,6 +119,17 @@ def get_track_details(request: TrackDetailsRequest) -> dict:
                     artists_data[artist['id']] = {
                         "image_url": artist_image_url,
                         "genres": artist.get('genres', [])
+                    }
+        
+        # Fetch detailed album information
+        albums_data = {}
+        if album_ids:
+            albums_response = spotify_client.albums(list(album_ids))
+            for album in albums_response['albums']:
+                if album is not None:
+                    albums_data[album['id']] = {
+                        "label": album.get('label', ''),
+                        "copyrights": album.get('copyrights', [])
                     }
         
         tracks = []
@@ -139,17 +152,23 @@ def get_track_details(request: TrackDetailsRequest) -> dict:
                         artist_details.update(artists_data[artist['id']])
                     artists.append(artist_details)
                 
+                # Build album details with additional information
+                album_details = {
+                    "uri": track['album']['uri'],
+                    "name": track['album']['name'],
+                    "album_type": track['album']['album_type'],
+                    "cover_art_url": album_cover_url,
+                    "release_date": track['album']['release_date'],
+                    "release_date_precision": track['album']['release_date_precision']
+                }
+                # Add detailed album info if available
+                if track['album']['id'] in albums_data:
+                    album_details.update(albums_data[track['album']['id']])
+                
                 tracks.append({
                     "name": track['name'],
                     "duration_ms": track['duration_ms'],
-                    "album": {
-                        "uri": track['album']['uri'],
-                        "name": track['album']['name'],
-                        "album_type": track['album']['album_type'],
-                        "cover_art_url": album_cover_url,
-                        "release_date": track['album']['release_date'],
-                        "release_date_precision": track['album']['release_date_precision']
-                    },
+                    "album": album_details,
                     "artists": artists
                 })
         
@@ -164,32 +183,6 @@ def get_track_details(request: TrackDetailsRequest) -> dict:
 
 
 
-@mcp.tool()
-def get_album_details(request: AlbumDetailsRequest) -> dict:
-    """Get detailed album information including release date, genres, and track listing"""
-    logger.info(f"Getting album details for {len(request.album_ids)} albums: {request.album_ids}")
-    
-    # Validate input
-    if not request.album_ids:
-        raise ValueError("album_ids cannot be empty")
-    
-    for i, album_id in enumerate(request.album_ids):
-        if not album_id.strip():
-            raise ValueError(f"album_ids[{i}] cannot be empty")
-    
-    # Concise placeholder response
-    albums = []
-    for album_id in request.album_ids:
-        albums.append({
-            "id": album_id,
-            "name": f"Album Name for {album_id}",
-            "release_date": "2023-01-15",
-            "album_type": "album",
-            "genres": ["pop"],
-            "track_ids": ["track1", "track2"]
-        })
-    
-    return {"albums": albums}
 
 
 def initialize_spotify_client():
