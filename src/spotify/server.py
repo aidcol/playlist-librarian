@@ -140,8 +140,11 @@ def get_track_details(request: TrackDetailsRequest) -> dict:
 
 @mcp.tool()
 def get_artist_details(request: ArtistDetailsRequest) -> dict:
-    """Get detailed artist information including genres, popularity, and related artists"""
+    """Get detailed artist information including genres and image URL"""
     logger.info(f"Getting artist details for {len(request.artist_ids)} artists: {request.artist_ids}")
+    
+    if spotify_manager is None:
+        raise SpotifyClientError("Spotify client not initialized")
     
     # Validate input
     if not request.artist_ids:
@@ -151,18 +154,34 @@ def get_artist_details(request: ArtistDetailsRequest) -> dict:
         if not artist_id.strip():
             raise ValueError(f"artist_ids[{i}] cannot be empty")
     
-    # Concise placeholder response
-    artists = []
-    for artist_id in request.artist_ids:
-        artists.append({
-            "id": artist_id,
-            "name": f"Artist Name for {artist_id}",
-            "genres": ["pop", "indie"],
-            "popularity": 85,
-            "related_artist_ids": ["related1", "related2"]
-        })
-    
-    return {"artists": artists}
+    try:
+        # Get authenticated Spotify client
+        spotify_client = spotify_manager.get_client()
+        
+        # Fetch artist details from Spotify API
+        artists_data = spotify_client.artists(request.artist_ids)
+        
+        artists = []
+        for artist in artists_data['artists']:
+            if artist is not None:
+                # Extract artist image URL (largest image)
+                artist_image_url = None
+                if artist['images']:
+                    artist_image_url = artist['images'][0]['url']
+                
+                artists.append({
+                    "image_url": artist_image_url,
+                    "genres": artist.get('genres', [])
+                })
+        
+        return {"artists": artists}
+        
+    except SpotifyClientError as e:
+        logger.error(f"Spotify client error: {e}")
+        raise ValueError(str(e))
+    except Exception as e:
+        logger.error(f"Error fetching artist details: {e}")
+        raise ValueError(f"Failed to fetch artist details: {str(e)}")
 
 
 @mcp.tool()
