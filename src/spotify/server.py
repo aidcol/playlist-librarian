@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from .config import Config, ConfigError
 from .spotify_client import SpotifyClientManager, SpotifyClientError
-from .utils import extract_playlist_id, SpotifyURLError
+from ..utils import extract_playlist_id, SpotifyURLError
 
 
 # Set up logging
